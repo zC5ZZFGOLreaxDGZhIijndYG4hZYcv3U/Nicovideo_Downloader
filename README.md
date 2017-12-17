@@ -12,7 +12,8 @@ Dependencies:
 4. various python libraries (use the command "pip3 install -r requirements.txt" to install these)
 
 Usage:
-nicovideo_downloader <Tag or Channel> <dlStack or fillStack> <the specific tag or channel user id you want to download from> -u <your nicovideo username> -p <your nicovideo password> -mu <mysql login username> -mp <mysql login password> -db <database name that you created>
+nicovideo_downloader (Tag or Channel) (dlStack or fillStack) (the specific tag or channel user id you want to download from) -u (your nicovideo username) -p (your nicovideo password) -mu (mysql login username) -mp (mysql login password) -db (database name that you created)
   
 fillStack will fetch all of the relevant entries (for example, retrieving all of the entries under that tag), and store them in the database.
 dlStack will download everything that's listed for that tag which hasn't already been downloaded.
+

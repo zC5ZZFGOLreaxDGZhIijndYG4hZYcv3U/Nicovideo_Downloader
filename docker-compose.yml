@@ -1,0 +1,61 @@
+version: '2'
+
+services:
+  mysql:
+    container_name: mysql
+    image: mysql:latest
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_DATABASE=nico_archive
+    ports:
+     - "3307:3306"
+    networks:
+      webnet:
+        ipv4_address: 10.20.0.5
+    volumes:
+     - ./mysql_dockerfiles/nico_archive.sql:/docker-entrypoint-initdb.d/nico_archive.sql
+     - ./mysql_files:/var/lib/mysql
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - 8080:8080
+    networks:
+      webnet:
+        ipv4_address: 10.20.0.6
+  ffmpeg:  
+    image: jrottenberg/ffmpeg:latest
+    networks:
+      webnet:
+        ipv4_address: 10.20.0.7
+  youtube-dl:
+    image: vimagick/youtube-dl:latest
+    volumes: 
+    - /Videos:/Videos
+    networks:
+      webnet:
+        ipv4_address: 10.20.0.8
+  python:
+    build:
+     context: python_dockerfiles/
+     args:
+       path: ${PWD}
+    volumes: 
+    - /var/run/docker.sock:/var/run/docker.sock
+    - /usr/bin/docker:/usr/bin/docker:ro
+    - /usr:/usr:ro
+    - ${PWD}/Videos:${PWD}/Videos
+    #this will prevent the process from exiting
+    command: tail -f /dev/null
+    networks:
+      webnet:
+        ipv4_address: 10.20.0.9
+networks:
+  webnet:
+    driver: bridge
+    ipam:
+     config:
+       - subnet: 10.20.0.0/16
+         gateway: 10.20.0.1
+

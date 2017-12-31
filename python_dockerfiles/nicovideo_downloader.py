@@ -100,10 +100,10 @@ class nicoExtractor():
         self.err_log_loc = "./Videos/error_logs/"
         self.tmp_video_loc = os.getcwd() + "/Videos/new_tmp/"
         self.cookie_file = os.getcwd() + "/Videos/cookies4.txt"
-        self.thumbnail_path = "./Videos/Thumbnails"
-        self.description_path = "./Videos/Descriptions"
-        self.json_path = "./Videos/json"
-        self.deleted_path = "./Videos/Deleted"
+        self.thumbnail_path = "./Videos/Thumbnails/"
+        self.description_path = "./Videos/Descriptions/"
+        self.json_path = "./Videos/json/"
+        self.deleted_path = "./Videos/Deleted/"
         self.username = username
         self.password = password
         self.mysql_username = mysql_username
@@ -112,7 +112,7 @@ class nicoExtractor():
         self.host = host
         self.using_docker = using_docker
 
-        self.video_dir_loc = os.getcwd() + "/Videos"
+        self.video_dir_loc = os.getcwd() + "/Videos/"
 
         if(not os.path.exists(self.video_dir_loc)):
             os.makedirs(self.video_dir_loc)
@@ -191,13 +191,12 @@ class nicoExtractor():
             if(self.using_docker):
                 arg1 = 'docker run -v %s:%s vimagick/youtube-dl:latest ' % (self.video_dir_loc, self.video_dir_loc) + arg1.replace("youtube-dl ", "")
 
-            print(arg1)
             dbConnection = self.getNewConn()
             dbIterator = dbConnection.cursor()
-            dbIterator.execute("select * from nicovideo where downloaded = '1' and video_ID = '" + str(video_id) + "'")
-            output = dbIterator.fetchall()
+            #dbIterator.execute("select * from nicovideo where downloaded = '1' and video_ID = '" + str(video_id) + "'")
+            #output = dbIterator.fetchall()
             #if it isn't deleted, and hasn't already been downloaded.
-            if((not output and not self.isDeleted(video_id))):
+            if((not self.isDeleted(video_id))):
                 a = subprocess.Popen(shlex.split(arg1), stderr = subprocess.PIPE, stdout=subprocess.PIPE)
                 #will block until subprocess returns
                 stdout, stderr = a.communicate()
@@ -229,16 +228,19 @@ class nicoExtractor():
 
                 ffmpegCom = "ffmpeg -v error -i %s -f null -" % videoArr[0]
                 if(self.using_docker):
-                    ffmpegCom = "docker run -v %s:%s  jrottenberg/ffmpeg:latest" % (self.video_dir_loc, self.video_dir_loc) + ffmpegCom.replace("ffmpeg ", "")
+                    ffmpegCom = "docker run -v %s:%s  jrottenberg/ffmpeg:latest " % (self.video_dir_loc, self.video_dir_loc) + ffmpegCom.replace("ffmpeg ", "")
                 b = subprocess.Popen(shlex.split(ffmpegCom), stderr = subprocess.PIPE, stdout=subprocess.PIPE)
                 ffmpegStdout, ffmpegStderr = b.communicate()
 
                 #if ffmpeg can't deal with it, something went wrong with the download, and we should replace the content of the video.
-                if("Invalid data found when processing input" in str(ffmpegStderr)):
+                if("get_buffer() failed" in str(ffmpegStderr)):
                     print("Ffmpeg err on %s" % video_id)
                     #mark as an incorrect download
                     inpNew_Filename = str(video_id) + str(uuid.uuid1())
-                    shutil.copyfile(videoArr[0], self.tmp_video_loc + "bad/" + inpNew_Filename) 
+                    shutil.copyfile(videoArr[0], self.tmp_video_loc + "bad/" + inpNew_Filename)
+                    #apparently not being overwritten
+                    if(os.path.exists(self.tmp_video_loc + "bad/" + inpNew_Filename)):
+                        os.unlink(videoArr[0])
                     errConn = self.getNewConn(cursorclass=pymysql.cursors.DictCursor)
                     errIterator = errConn.cursor()
                     errIterator.execute("INSERT INTO erroneous_dls (video_ID, new_filename, ffmpeg_stderr) VALUES (%s, %s, %s)", (video_id, inpNew_Filename, ffmpegStderr))
@@ -248,11 +250,13 @@ class nicoExtractor():
                 
                 try:
                     self.dbInteract(video_id, method, quality = isLowQuality)
+                    self.copyDriver(self.tmp_video_loc, video_id)
                 except Exception as e:
                     print("Error in mysql interaction for " + str(nicoLink) + ": "+ str(e))
-                self.copyDriver(self.tmp_video_loc, video_id)
-            
-        except (ConnectionError, socket.gaierror, AssertionError, MaxRetryError, NewConnectionError) as e:
+
+        #deal with assertionerrors in another way
+                    
+        except (ConnectionError, socket.gaierror, MaxRetryError, NewConnectionError) as e:
             dbIterator.close()
             dbConnection.close()
             print(str(type(e).__name__), "on %s" % video_id)
@@ -263,7 +267,7 @@ class nicoExtractor():
     def isDeleted(self, video_ID):
         url = "http://ext.nicovideo.jp/api/getthumbinfo/%s" % video_ID
         result = requests.get(url, headers = dict(referer = url)).content.decode()
-        soup = BeautifulSoup(result)
+        soup = BeautifulSoup(result, "lxml")
         deletionIndication = soup.find('code')
         if(deletionIndication != None and deletionIndication.string == "DELETED"):
             print("The video has been deleted.")
@@ -271,6 +275,7 @@ class nicoExtractor():
             dbIterator = dbConnection.cursor()
             dbIterator.execute("INSERT INTO delVideos (video_ID) VALUES (%s)", (video_ID))
             dbConnection.commit()
+            dbConnection.close()
             return True
         print("The video has not been deleted")
         return False
@@ -290,7 +295,7 @@ class nicoExtractor():
         
         #resp = requests.get(url, headers = dict(referer = url)).content.decode()
         resp = requests.get(url)
-        soup = BeautifulSoup(resp.content)
+        soup = BeautifulSoup(resp.content, "lxml")
         #i = 1
 
         #string will be found if the page doesn't exist for this query.
@@ -314,7 +319,7 @@ class nicoExtractor():
                 print("Integrity error: %s" % e)
                 
             conn.close()
-            
+        dbConnection.close()
         if(i == 33):
             self.downloadDate(tag, date, pageNumber + 1)
 
@@ -338,7 +343,7 @@ class nicoExtractor():
         #message displayed when page is invalid
         if("に一致する動画は見つかりませんでした" in resp ):
             return
-        soup = BeautifulSoup(resp)
+        soup = BeautifulSoup(resp, "lxml")
         for link in soup.find_all('a', href=re.compile('^watch/')):
             authConn = self.getNewConn(cursorclass=pymysql.cursors.DictCursor)
             authIterator = authConn.cursor()
@@ -356,7 +361,7 @@ class nicoExtractor():
     def dbInteract(self, video_ID, method, quality):
         url = "http://ext.nicovideo.jp/api/getthumbinfo/%s" % video_ID
         result = self.session_requests.get(url, headers = dict(referer = url)).content.decode()
-        soup = BeautifulSoup(result)
+        soup = BeautifulSoup(result, "lxml")
         inpTitle = soup.find('title').string
         inpViews = soup.find('view_counter').string
         inpComments = soup.find('comment_num').string
@@ -370,7 +375,7 @@ class nicoExtractor():
             #author not listed in nicovideo, so let's try nicochart
             try:
                 resultNicoChart =  urllib.request.urlopen("http://www.nicochart.jp/watch/" + inpVideo_ID)
-                nicoChartSoup = BeautifulSoup(resultNicoChart, from_encoding=resultNicoChart.info().get_param('charset'))
+                nicoChartSoup = BeautifulSoup(resultNicoChart, "lxml", from_encoding=resultNicoChart.info().get_param('charset'))
                 inpAuthorName = nicoChartSoup.find('em', 'name').find('a').string
                 inpUploader = nicoChartSoup.find("a", "nicovideo-link")['href'][29:]
             except Exception as e:
@@ -439,13 +444,13 @@ class nicoExtractor():
         return False
 
     def copyLinearProbe(self, copiedFileBaseDir, copiedFileName,  destinationFilePath):
-        copiedFilePath = copiedFileBaseDir + "/" + copiedFileName
+        copiedFilePath = copiedFileBaseDir + copiedFileName
         #check here for primary key of this value. If one exists, skip.
         if(self.alreadyExists(copiedFilePath)):
             print("This file has already been copied: %s" % copiedFilePath)
             return
         #don't need -n for no clobber, because it won't overwrite in any case
-        comm = "cp -v -l --backup=numbered '{start}' '{destination}'".format(start = copiedFilePath, destination = destinationFilePath)
+        comm = "cp -v --archive -l --backup=numbered '{start}' '{destination}'".format(start = copiedFilePath, destination = destinationFilePath)
         copy = subprocess.Popen(shlex.split(comm), stderr = subprocess.PIPE, stdout=subprocess.PIPE)
         stdout = copy.communicate()[0].decode()
         if(" (backup: '" in stdout):
@@ -456,12 +461,21 @@ class nicoExtractor():
         if(copy.returncode != 0):
             print("Copy failure on %s!" % copiedFilePath)
             raise RuntimeError
+        destinationFileLocation = destinationFilePath + destinationFileName
 
         #what if copiedFileName is empty?
         #path.isfile won't return true if it's pointing to a directory, so should still be fine.
-        if(os.path.isfile(copiedFileBaseDir + copiedFileName) and os.path.isfile(destinationFilePath + "/" + copiedFileName)):
+        if(os.path.isfile(copiedFilePath) and os.path.isfile(destinationFileLocation)):
             print("unlinking...")
-            os.unlink(copiedFileBaseDir + copiedFileName)
+            os.unlink(copiedFilePath)
+            self.logOperation(copiedFilePath, destinationFileLocation)
+    
+    def logOperation(self, start, finish):
+        dbConnection = self.getNewConn()
+        dbIterator = dbConnection.cursor()
+        dbIterator.execute("INSERT INTO nicovideo_file_migrations (original_file_location, destination_file_location) VALUES (%s, %s)", (start, finish))
+        dbConnection.commit()
+        dbConnection.close()
     
 def writeF(file, text):
     if os.path.isfile("./" + file) == False:
